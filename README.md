@@ -1,50 +1,41 @@
 # Traffic Sign Detection & ADAS
 
-Ce projet fournit un système d’**aide à la conduite (ADAS)** avec :
-
-- Détection de **panneaux de signalisation** via YOLOv8.
-- Détection de **franchissement de ligne** (lane departure).
-- Mesure de **distance avec capteur ultrason**.
-- Interface **web Flask** pour :
-  - Uploader des vidéos / images.
-  - Lancer un flux type « Dash Cam ».
-- Mode **ADAS temps réel** avec fenêtre OpenCV (`adas_pi.py`).
-- Possibilité de **streamer la webcam d’un PC vers un Raspberry Pi**.
+Ce projet fournit un système d’**aide à la conduite (ADAS)** pour la détection et l’alerte sur les panneaux de signalisation, le franchissement de ligne, et la distance avec capteurs ultrasoniques. Il combine des technologies de vision par ordinateur (YOLOv8), un capteur ultrason, et une interface web Flask pour un système complet d’assistance en temps réel.
 
 ---
 
 ## 1. Structure du projet
 
 - **`adas_pi.py`**  
-  Script principal ADAS (caméra + lanes + panneaux + ultrason + TTS).
+  Script principal ADAS (caméra + détection de voies, panneaux, ultrason, synthèse vocale).
 - **`main.py`**  
-  Application Flask (interface web) pour upload et streaming.
+  Application Flask pour interface web (upload et streaming).
 - **`test.py`**  
-  Petit serveur Flask qui diffuse la webcam du PC en MJPEG sur `/video`.
+  Serveur Flask diffusant la webcam du PC en MJPEG sur `/video`.
 - **`static/models/best.pt`**  
-  Modèle YOLO pour la détection des panneaux.
+  Modèle YOLOv8 entraîné pour la détection des panneaux.
 - **`static/coco.txt`** (ou équivalent)  
-  Fichier texte avec la liste des classes YOLO.
+  Liste des classes YOLO pour la détection.
 - **`static/input/gvideo/`**, **`static/input/gphoto/`**  
-  Dossiers d’entrée pour vidéos / photos uploadées.
+  Dossiers d’entrée pour vidéos et photos uploadées.
 - **`static/input/photo/`**  
-  Dossier de sortie pour les images annotées (`dskjds.jpg`, etc.).
+  Dossier de sortie pour images annotées.
 
 ---
 
-## 2. Installation
+## 2. Installation & Prérequis
 
 ### 2.1. Prérequis
 
-- Python 3.10+ (PC et/ou Raspberry Pi).
+- Python 3.10+ (PC ou Raspberry Pi).
 - Git (optionnel).
-- Sur le Raspberry Pi :  
-  - Caméra activée dans `raspi-config` (si caméra CSI).
-  - Optionnel : `picamera2` si utilisation directe de la caméra Pi.
+- Sur Raspberry Pi :  
+  - Caméra activée dans `raspi-config` (pour caméra CSI).  
+  - Optionnel : `picamera2` pour la caméra Pi.
 
 ### 2.2. Création de l’environnement virtuel
 
-Dans le dossier du projet (`traffic-sign-detection`) :
+Dans le dossier du projet (`traffic-sign-detection`) :
 
 ```bash
 # Windows (PowerShell)
@@ -56,20 +47,22 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-Installer les dépendances de base (adapter si tu as déjà un `requirements.txt`) :
+Installer les dépendances de base (adapter si `requirements.txt` existe) :
 
 ```bash
 pip install flask opencv-python ultralytics torch pyttsx3
 ```
 
-Sur Raspberry Pi, si tu veux utiliser la **caméra CSI** via Picamera2 :
+### 2.3. Installation spécifique Raspberry Pi
+
+Pour utiliser la caméra CSI avec Picamera2 :
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y python3-picamera2
 ```
 
-Pour la synthèse vocale (optionnel, Pi) :
+Pour la synthèse vocale (optionnel) :
 
 ```bash
 sudo apt-get install -y espeak-ng
@@ -79,78 +72,54 @@ sudo apt-get install -y espeak-ng
 
 ## 3. `adas_pi.py` – ADAS temps réel
 
-### 3.1. Fonctionnalités
+### 3.1. Fonctionnalités principales
 
-- **Camera** (`Camera`):
-  - Utilise soit :
-    - `Picamera2` (caméra Pi) si `ADAS_USE_PICAMERA=1`.
-    - `cv2.VideoCapture` :
-      - Soit par **index** (0, 1, …).
-      - Soit par **device/URL** (ex. `/dev/video20`, `rtsp://...`, `http://.../video`).
-  - Sélection via `ADAS_CAM_DEVICE`.
+- **Camera** (`Camera`) :  
+  - Utilise `Picamera2` si `ADAS_USE_PICAMERA=1`.  
+  - Sinon `cv2.VideoCapture` (index, device, URL).  
+  - Choix via variable `ADAS_CAM_DEVICE`.
 
-- **LaneDetector** :
-  - Détection de lignes de route (blanc / jaune) dans une région d’intérêt.
-  - Détection de franchissement de ligne par rapport à deux “rectangles roues”.
-  - Dessin :
-    - Lignes de voie.
-    - Rectangles des “roues”.
-    - Message "Attention, franchissement de ligne" si sortie de voie.
+- **LaneDetector** :  
+  - Détecte les lignes blanches/jaunes dans une zone définie.  
+  - Détection de franchissement de ligne selon la position des roues.  
+  - Affiche lignes et messages d’alerte.
 
-- **SignDetector** :
-  - Charge un modèle YOLO (`best.pt` par défaut).
-  - Récupère les noms de classes depuis :
-    - `model.names`, ou
-    - un fichier de labels (`coco.txt`), ou
-    - un mapping par défaut.
-  - Transforme les labels en français lisibles (`_prettify_label`).
-  - Affiche sur l’image :
-    - Boîtes englobantes des panneaux.
-    - Nom du panneau et score.
-  - **TTS (pyttsx3)** :
-    - Annonce vocale des panneaux et des alertes.
-    - Si `pyttsx3` ou eSpeak ne sont pas disponibles, le TTS est désactivé proprement (message `[SignDetector] TTS désactivé ...`).
+- **SignDetector** :  
+  - Utilise modèle YOLO (`best.pt` par défaut).  
+  - Labels récupérés via modèle, fichiers ou mapping par défaut.  
+  - Affiche boîtes, labels et scores sur image.  
+  - Synthèse vocale (TTS) avec pyttsx3 si disponible.
 
-- **UltrasonicSensor** :
-  - Lecture asynchrone d’un capteur ultrason via GPIO (ou simulation si pas de GPIO).
-  - Commande d’un buzzer si l’obstacle est en-dessous d’un seuil (par défaut 10 cm).
-  - Affichage de la distance sur l’overlay.
+- **UltrasonicSensor** :  
+  - Lecture asynchrone d’un capteur ultrason via GPIO (ou simulation).  
+  - Buzzer si obstacle trop proche (seuil par défaut 10 cm).  
+  - Affiche la distance en overlay.
 
-- **Overlay** :
-  - Dessin simultané :
-    - Lignes de voie.
-    - Rectangles “roues” (verts/rouges si alerte).
-    - Panneaux détectés (boîte + label + confiance).
-    - Distance ultrason.
-  - Persistance des panneaux quelques secondes (`sign_persist_sec`) pour que le texte reste lisible.
+- **Overlay** :  
+  - Superpose voies, “roues”, panneaux, distance, alertes.  
+  - Persistance des panneaux quelques secondes.
 
 ### 3.2. Variables d’environnement importantes
 
-- `ADAS_DISPLAY` (par défaut `1`)  
-  - `1` → affiche une fenêtre OpenCV `ADAS`.  
-  - `0` → mode headless (pas de fenêtre).
+- `ADAS_DISPLAY` (par défaut `1`) :  
+  - `1` = affiche fenêtre OpenCV `ADAS`  
+  - `0` = mode headless
 
-- `ADAS_ANALYZE_INPUT`  
-  - `0` → mode caméra temps réel.
-  - `1` → mode “analyse offline” d’un dossier d’images (`static/input/gphoto` par défaut) avec export CSV.
+- `ADAS_ANALYZE_INPUT` :  
+  - `0` = caméra temps réel  
+  - `1` = analyse offline dossier images
 
-- `ADAS_MODEL`  
-  - Chemin du modèle YOLO (par défaut `static/models/best.pt`).
+- `ADAS_MODEL` : chemin du modèle YOLO (par défaut `static/models/best.pt`).
 
-- `ADAS_LABELS`  
-  - Chemin du fichier de labels (par défaut `static/models/coco.txt` si présent).
+- `ADAS_LABELS` : chemin fichier labels (par défaut `static/models/coco.txt`).
 
-- `ADAS_USE_PICAMERA`  
-  - `1` → tente d’utiliser `Picamera2` (caméra Pi).
-  - `0` → utilise OpenCV (`cv2.VideoCapture`).
+- `ADAS_USE_PICAMERA` :  
+  - `1` = `Picamera2`  
+  - `0` = OpenCV `VideoCapture`.
 
-- `ADAS_CAM_DEVICE`  
-  - Choix de la source vidéo OpenCV :
-    - `"0"`, `"1"`… → index de caméra.
-    - `"/dev/video20"`… → device spécifique sur Linux.
-    - `"http://IP:PORT/video"` → flux réseau (ex. webcam du PC).
+- `ADAS_CAM_DEVICE` : source vidéo OpenCV (index, device Linux, URL).
 
-### 3.3. Lancement de base (PC)
+### 3.3. Exemple de lancement (PC)
 
 ```bash
 .\.venv\Scripts\activate
@@ -165,38 +134,23 @@ python adas_pi.py
 
 ### 4.1. Fonctionnalités
 
-- Page d’accueil `/` :
-  - Bouton **Upload** pour une vidéo ou une image.
-  - Bouton **Stream from your Dash Cam**.
+- Page d’accueil `/` avec boutons **Upload** et **Stream from your Dash Cam**.
 
-- `/upload` (POST) :
-  - Si fichier `.mp4` :
-    - Sauvegarde dans `static/input/gvideo/`.
-    - Ouvre la vidéo pour traitement (`gen_new`).
-    - Lance `adas_pi.py` via `run_adas()`.
-    - Redirige vers `/video_feed_signs` (flux vidéo traité).
-  - Si fichier image (`.png`, `.jpeg`, `.jpg`) :
-    - Sauvegarde dans `static/input/gphoto/`.
-    - Appelle `gen_new2` pour détecter les panneaux sur l’image.
-    - Lance `adas_pi.py` via `run_adas()`.
-    - Redirige vers `/video_feed_sign` (page avec l’image annotée).
+- Endpoint `/upload` (POST) :  
+  - `.mp4` → sauvegarde dans `static/input/gvideo/`, traitement, lancement `adas_pi.py`, redirection vers flux vidéo traitée.  
+  - Image → sauvegarde dans `static/input/gphoto/`, détection panneaux, lancement `adas_pi.py`, redirection vers image annotée.
 
-- `/video_feed_signs` :
-  - Diffuse un flux MJPEG (vidéo + panneaux) pour la vidéo uploadée.
+- `/video_feed_signs` : flux MJPEG vidéo + panneaux.
 
-- `/camera_feed` :
-  - Ne gère plus directement la caméra OpenCV.
-  - Appelle `run_adas()` pour lancer `adas_pi.py` (mode temps réel).
-  - Redirige vers `/`.
+- `/camera_feed` : lance `adas_pi.py` en mode temps réel.
 
-- `/video_feed_sign` :
-  - Affiche l’image annotée après détection (`preview_photo.html`).
+- `/video_feed_sign` : affiche image annotée.
 
 ### 4.2. Fonction `run_adas()`
 
 ```python
 def run_adas():
-    """Lance le script adas_pi.py dans un processus séparé."""
+    """Lance adas_pi.py en processus séparé."""
     python_exe = sys.executable
     script_path = os.path.join(os.path.dirname(__file__), "adas_pi.py")
     env = os.environ.copy()
@@ -205,12 +159,7 @@ def run_adas():
     subprocess.Popen([python_exe, script_path], env=env)
 ```
 
-- Lance `adas_pi.py` en arrière-plan avec le même Python que Flask.
-- Utilise les variables d’environnement existantes (par ex. `ADAS_CAM_DEVICE`).
-
-### 4.3. Lancement de l’interface Web
-
-#### Sur PC (démo locale)
+### 4.3. Exemple de lancement Web (PC)
 
 ```bash
 .\.venv\Scripts\activate
@@ -221,54 +170,26 @@ python main.py
 
 Puis ouvrir `http://127.0.0.1:5000/`.
 
-#### Sur Raspberry Pi (usage réel)
-
-```bash
-source .venv/bin/activate
-
-export ADAS_CAM_DEVICE="http://IP_DU_PC:5001/video"   # ou /dev/videoX ou autre
-export ADAS_USE_PICAMERA="0"
-export ADAS_DISPLAY="1"
-export ADAS_ANALYZE_INPUT="0"
-
-python main.py
-```
-
 ---
 
-## 5. `test.py` – Streaming de la webcam du PC vers le Pi
+## 5. `test.py` – Streaming webcam PC vers Raspberry Pi
 
 ### 5.1. Rôle
 
-- Lit la webcam du PC (`VideoCapture(0)`).
-- Diffuse le flux sur `http://PC_IP:5001/video` au format MJPEG.
-- Permet au Raspberry Pi de **consommer la webcam du PC comme source vidéo** via `ADAS_CAM_DEVICE`.
+- Lit webcam PC (`VideoCapture(0)`).
+- Diffuse flux MJPEG sur `http://PC_IP:5001/video`.
+- Permet Pi d’utiliser webcam PC comme source vidéo.
 
 ### 5.2. Lancement
 
-Sur le **PC** :
+Sur PC :
 
 ```bash
 .\.venv\Scripts\activate
 python test.py
 ```
 
-La console affiche par exemple :
-
-```text
-Running on http://127.0.0.1:5001
-Running on http://10.17.140.241:5001
-```
-
-- Tester dans le navigateur du PC :
-
-  `http://127.0.0.1:5001/video`
-
-- Sur le Raspberry Pi, utiliser cette URL dans `ADAS_CAM_DEVICE` :
-
-  ```bash
-  export ADAS_CAM_DEVICE="http://10.17.140.241:5001/video"
-  ```
+Console affiche les URLs disponibles. Utiliser dans `ADAS_CAM_DEVICE` sur Pi.
 
 ---
 
@@ -276,94 +197,80 @@ Running on http://10.17.140.241:5001
 
 ### 6.1. ADAS temps réel sur PC
 
-1. Branche la caméra (webcam).
-2. Dans le venv :
+1. Brancher la caméra (webcam).
+2. Activer venv.
+3. Set variables:
 
-   ```bash
-   $env:ADAS_DISPLAY="1"
-   $env:ADAS_ANALYZE_INPUT="0"
-   python adas_pi.py
-   ```
+```bash
+$env:ADAS_DISPLAY="1"
+$env:ADAS_ANALYZE_INPUT="0"
+python adas_pi.py
+```
 
-3. Regarder la fenêtre `ADAS`.
+4. Regarder la fenêtre `ADAS`.
 
-### 6.2. ADAS temps réel sur Raspberry Pi avec caméra Pi ou USB
+### 6.2. ADAS temps réel sur Raspberry Pi
 
-1. Configurer la variable caméra :
-   - Caméra Pi via Picamera2 :
+- Configurer caméra Pi ou USB :
 
-     ```bash
-     export ADAS_USE_PICAMERA="1"
-     ```
+```bash
+export ADAS_USE_PICAMERA="1"
+# ou pour caméra USB
+export ADAS_USE_PICAMERA="0"
+export ADAS_CAM_DEVICE="/dev/video20"
+```
 
-   - Webcam USB via /dev/videoX :
+- Lancer :
 
-     ```bash
-     export ADAS_USE_PICAMERA="0"
-     export ADAS_CAM_DEVICE="/dev/video20"  # exemple
-     ```
+```bash
+export ADAS_DISPLAY="1"
+export ADAS_ANALYZE_INPUT="0"
+python adas_pi.py
+```
 
-2. Lancer :
+### 6.3. Webcam PC utilisée par Pi
 
-   ```bash
-   export ADAS_DISPLAY="1"
-   export ADAS_ANALYZE_INPUT="0"
-   python adas_pi.py
-   ```
+1. Sur PC, lancer `test.py`.
+2. Sur Pi, configurer variables :
 
-### 6.3. Webcam du PC utilisée par le Pi
-
-1. Sur le **PC**, lancer `test.py`.
-2. Sur le **Pi**, définir :
-
-   ```bash
-   export ADAS_CAM_DEVICE="http://IP_DU_PC:5001/video"
-   export ADAS_USE_PICAMERA="0"
-   export ADAS_DISPLAY="1"
-   export ADAS_ANALYZE_INPUT="0"
-   python adas_pi.py
-   ```
+```bash
+export ADAS_CAM_DEVICE="http://IP_DU_PC:5001/video"
+export ADAS_USE_PICAMERA="0"
+export ADAS_DISPLAY="1"
+export ADAS_ANALYZE_INPUT="0"
+python adas_pi.py
+```
 
 ---
 
 ## 7. Remarques et limitations
 
 - **OpenCV headless** :  
-  Si OpenCV a été installé en version *headless*, `cv2.imshow`/fenêtre `ADAS` ne fonctionnera pas.  
-  Sur PC, préférer `opencv-python` (et pas `opencv-python-headless`).
+  Pas de fenêtre `cv2.imshow` si version headless installée.
 
-- **TTS (pyttsx3)** :
-  - Sur certaines plateformes (Pi sans eSpeak), le TTS est automatiquement désactivé.
-  - Le reste du pipeline ADAS continue de fonctionner.
+- **TTS (pyttsx3)** :  
+  Désactivé si eSpeak non disponible, sans impact sur pipeline.
 
-- **Serveurs Flask (`main.py`, `test.py`)** :
-  - En mode développement, ne pas exposer directement sur Internet.
-  - Pour une utilisation en production, utiliser un serveur WSGI adapté (gunicorn, uwsgi, etc.).
+- **Serveurs Flask (`main.py`, `test.py`)** :  
+  Ne pas exposer en prod sans serveur WSGI adapté.
 
 ---
 
 ## 8. Personnalisation
 
-- Modifier la durée d’affichage des panneaux :
+- Durée d’affichage des panneaux :
 
-  Dans `adas_pi.py` (dans `main()`):
+```python
+sign_persist_sec = 1.5  # augmenter selon besoin
+```
 
-  ```python
-  sign_persist_sec = 1.5  # augmenter à 3.0, 5.0, etc.
-  ```
+- Seuil alerte ultrason :
 
-- Modifier le seuil d’alerte ultrason :
+```python
+ultra = UltrasonicSensor(alert_threshold_cm=10.0)
+```
 
-  ```python
-  ultra = UltrasonicSensor(alert_threshold_cm=10.0)
-  ```
+- Changer modèle YOLO :
 
-- Changer le modèle YOLO des panneaux :
-
-  ```bash
-  export ADAS_MODEL="static/models/ton_modele.pt"
-  ```
-
----
-#   T r a f f i c - S i g n - D e t e c t i o n - A D A S  
- 
+```bash
+export ADAS_MODEL="static/models/ton_modele.pt"
